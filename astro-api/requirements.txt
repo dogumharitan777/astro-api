@@ -1,4 +1,4 @@
 fastapi==0.111.0
 uvicorn[standard]==0.30.1
-flatlib==0.2.2
+flatlib==0.2.3
 pydantic==2.7.1
