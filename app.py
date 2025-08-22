@@ -1,7 +1,7 @@
-# app.py  —  TAM ve DOĞRU SÜRÜM
+# app.py — FastAPI + Flatlib + Swiss Ephemeris (Render uyumlu)
 
 import os
-import swisseph as swe  # <<--- ÖNEMLİ: önce import et
+import swisseph as swe  # Swiss Ephemeris Python binding (pyswisseph)
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -9,51 +9,100 @@ from flatlib.chart import Chart
 from flatlib.datetime import Datetime
 from flatlib.geopos import GeoPos
 
-# Swiss Ephemeris yolunu kur (hem env hem de local fallback)
+# -----------------------------
+# Swiss Ephemeris path ayarı
+# -----------------------------
+# Build sırasında ephemeris dosyaları "ephe/" klasörüne indiriliyor.
+# (Render Environment'ta SE_EPHE_PATH=/opt/render/project/src/ephe)
 EPHE_PATH = os.environ.get("SE_EPHE_PATH", os.path.join(os.getcwd(), "ephe"))
 try:
     os.makedirs(EPHE_PATH, exist_ok=True)
 except Exception:
     pass
-swe.set_ephe_path(EPHE_PATH)  # <<--- HATA BURADAYDI: swe import edilmeden çağrılıyordu
+swe.set_ephe_path(EPHE_PATH)
 
+# -----------------------------
+# Güvenlik (API Key)
+# -----------------------------
 SECRET = os.environ.get("SECRET", "CHANGE_ME")
 
-app = FastAPI()
+# -----------------------------
+# FastAPI & CORS
+# -----------------------------
+app = FastAPI(title="Natal API", version="1.0.0")
 
-# Canlıya geçince domainini yaz: ["https://seninsite.com"]
-origins = ["*"]
+# Canlıya geçince origin'i sitenin domainiyle sınırla: ["https://seninsite.com"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins, allow_credentials=True,
-    allow_methods=["*"], allow_headers=["*"],
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
+# -----------------------------
+# Girdi şeması
+# -----------------------------
 class NatalIn(BaseModel):
-    date: str
-    time: str
-    tz: str = "+03:00"
+    date: str           # "YYYY/MM/DD" ya da "YYYY-MM-DD" (normalize edeceğiz)
+    time: str           # "HH:MM"
+    tz: str = "+03:00"  # ör: "+03:00"
     lat: float
     lon: float
 
+# -----------------------------
+# Healthcheck
+# -----------------------------
 @app.get("/")
 def health():
-    return {"ok": True, "msg": "Natal API up"}
+    return {"ok": True, "msg": "Natal API up", "ephe": EPHE_PATH}
 
+# -----------------------------
+# Ana uç nokta
+# -----------------------------
 @app.post("/natal")
 async def natal(req: Request, data: NatalIn):
+    # API KEY kontrolü
     key = req.headers.get("X-API-KEY")
     if key != SECRET:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    dt  = Datetime(data.date, data.time, data.tz)
-    pos = GeoPos(data.lat, data.lon)
-    chart = Chart(dt, pos)
+    # Tarih/format normalizasyonu
+    date_str = data.date.replace("-", "/").strip()
+    time_str = data.time.strip()
+    tz_str   = data.tz.strip()
 
-    def pack(name):
-        obj = chart.get(name)
-        return {"sign": obj.sign, "house": obj.house, "lon": float(obj.lon)}
+    # Hesaplama
+    try:
+        dt  = Datetime(date_str, time_str, tz_str)
+        pos = GeoPos(data.lat, data.lon)
+        chart = Chart(dt, pos)
 
-    planets = {n: pack(n) for n in ["Sun","Moon","Mercury","Venus","Mars","Jupiter","Saturn","Uranus","Neptune","Pluto"]}
-    asc = chart.get("Asc")
-    return {"ok": True, "asc": {"sign": asc.sign, "lon": float(asc.lon)}, "planets": planets}
+        def pack(name: str):
+            obj = chart.get(name)
+            # flatlib obj.sign -> burç kısa adı (örn: ARI, TAU, GEM ...)
+            # obj.house       -> ev numarası (1..12 ya da None)
+            # obj.lon         -> ekliptik boylam (float)
+            return {
+                "sign": obj.sign,
+                "house": obj.house,
+                "lon": float(obj.lon),
+            }
+
+        planets = {
+            n: pack(n)
+            for n in ["Sun", "Moon", "Mercury", "Venus", "Mars",
+                      "Jupiter", "Saturn", "Uranus", "Neptune", "Pluto"]
+        }
+        asc = chart.get("Asc")
+
+        return {
+            "ok": True,
+            "asc": {"sign": asc.sign, "lon": float(asc.lon)},
+            "planets": planets
+        }
+
+    except Exception as e:
+        # Hataları logla ve anlamlı mesaj döndür
+        print("Natal error:", repr(e))
+        raise HTTPException(status_code=400, detail=f"Input error: {e}")
