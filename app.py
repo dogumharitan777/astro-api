@@ -6,7 +6,15 @@ from flatlib.chart import Chart
 from flatlib.datetime import Datetime
 from flatlib.geopos import GeoPos
 
-SECRET = os.environ.get("SECRET", "CHANGE_ME")  # Render > Environment ile vereceğiz
+# NEW — Swiss Ephemeris yolunu kur
+EPHE_PATH = os.environ.get("SE_EPHE_PATH", os.path.join(os.getcwd(), "ephe"))
+try:
+    os.makedirs(EPHE_PATH, exist_ok=True)
+except Exception:
+    pass
+swe.set_ephe_path(EPHE_PATH)
+
+SECRET = os.environ.get("SECRET", "CHANGE_ME")
 
 app = FastAPI()
 
@@ -53,3 +61,4 @@ async def natal(req: Request, data: NatalIn):
         "asc": {"sign": asc.sign, "lon": float(asc.lon)},
         "planets": planets
     }
+
