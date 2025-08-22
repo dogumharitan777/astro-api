@@ -1,4 +1,7 @@
+# app.py  —  TAM ve DOĞRU SÜRÜM
+
 import os
+import swisseph as swe  # <<--- ÖNEMLİ: önce import et
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -6,20 +9,20 @@ from flatlib.chart import Chart
 from flatlib.datetime import Datetime
 from flatlib.geopos import GeoPos
 
-# NEW — Swiss Ephemeris yolunu kur
+# Swiss Ephemeris yolunu kur (hem env hem de local fallback)
 EPHE_PATH = os.environ.get("SE_EPHE_PATH", os.path.join(os.getcwd(), "ephe"))
 try:
     os.makedirs(EPHE_PATH, exist_ok=True)
 except Exception:
     pass
-swe.set_ephe_path(EPHE_PATH)
+swe.set_ephe_path(EPHE_PATH)  # <<--- HATA BURADAYDI: swe import edilmeden çağrılıyordu
 
 SECRET = os.environ.get("SECRET", "CHANGE_ME")
 
 app = FastAPI()
 
-# CORS: WP sitenden çağırabilmek için domainini buraya ekleyebilirsin
-origins = ["*"]  # güvenlik için canlıda "*" yerine sitenin domainini yaz
+# Canlıya geçince domainini yaz: ["https://seninsite.com"]
+origins = ["*"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins, allow_credentials=True,
@@ -27,8 +30,8 @@ app.add_middleware(
 )
 
 class NatalIn(BaseModel):
-    date: str   # "1999-07-21"
-    time: str   # "14:30"
+    date: str
+    time: str
     tz: str = "+03:00"
     lat: float
     lon: float
@@ -39,7 +42,6 @@ def health():
 
 @app.post("/natal")
 async def natal(req: Request, data: NatalIn):
-    # Basit shared-secret kontrolü
     key = req.headers.get("X-API-KEY")
     if key != SECRET:
         raise HTTPException(status_code=401, detail="Unauthorized")
@@ -52,13 +54,6 @@ async def natal(req: Request, data: NatalIn):
         obj = chart.get(name)
         return {"sign": obj.sign, "house": obj.house, "lon": float(obj.lon)}
 
-    planet_names = ["Sun","Moon","Mercury","Venus","Mars","Jupiter","Saturn","Uranus","Neptune","Pluto"]
-    planets = {n: pack(n) for n in planet_names}
+    planets = {n: pack(n) for n in ["Sun","Moon","Mercury","Venus","Mars","Jupiter","Saturn","Uranus","Neptune","Pluto"]}
     asc = chart.get("Asc")
-
-    return {
-        "ok": True,
-        "asc": {"sign": asc.sign, "lon": float(asc.lon)},
-        "planets": planets
-    }
-
+    return {"ok": True, "asc": {"sign": asc.sign, "lon": float(asc.lon)}, "planets": planets}
