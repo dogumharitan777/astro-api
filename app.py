@@ -77,32 +77,28 @@ async def natal(req: Request, data: NatalIn):
         dt  = Datetime(date_str, time_str, tz_str)
         pos = GeoPos(data.lat, data.lon)
         chart = Chart(dt, pos)
+def pack(name: str):
+    obj = chart.get(name)
+    return {
+        "sign": obj.sign,
+        "lon": float(obj.lon),
+    }
 
-        def pack(name: str):
-            obj = chart.get(name)
-            # flatlib obj.sign -> burç kısa adı (örn: ARI, TAU, GEM ...)
-            # obj.house       -> ev numarası (1..12 ya da None)
-            # obj.lon         -> ekliptik boylam (float)
-            return {
-                "sign": obj.sign,
-                "house": obj.house,
-                "lon": float(obj.lon),
-            }
+planets = {
+    n: pack(n)
+    for n in ["Sun", "Moon", "Mercury", "Venus", "Mars",
+              "Jupiter", "Saturn", "Uranus", "Neptune", "Pluto"]
+}
+asc = chart.get("Asc")
 
-        planets = {
-            n: pack(n)
-            for n in ["Sun", "Moon", "Mercury", "Venus", "Mars",
-                      "Jupiter", "Saturn", "Uranus", "Neptune", "Pluto"]
-        }
-        asc = chart.get("Asc")
-
-        return {
-            "ok": True,
-            "asc": {"sign": asc.sign, "lon": float(asc.lon)},
-            "planets": planets
-        }
+return {
+    "ok": True,
+    "asc": {"sign": asc.sign, "lon": float(asc.lon)},
+    "planets": planets
+}
 
     except Exception as e:
         # Hataları logla ve anlamlı mesaj döndür
         print("Natal error:", repr(e))
         raise HTTPException(status_code=400, detail=f"Input error: {e}")
+
