@@ -1,4 +1,4 @@
-# app.py — FastAPI + Flatlib (Uranüs/Neptün/Plüton dahil)
+# app.py — FastAPI + Flatlib (tüm gezegenler + sağlam ASC)
 
 import os
 import swisseph as swe
@@ -11,15 +11,12 @@ from flatlib import const
 
 app = FastAPI()
 
-# Ephemeris klasörü (Render build'de ephe/ içine indiriliyor)
+# Ephemeris klasörü
 EPHE_PATH = os.path.join(os.getcwd(), "ephe")
-try:
-    os.makedirs(EPHE_PATH, exist_ok=True)
-except Exception:
-    pass
+os.makedirs(EPHE_PATH, exist_ok=True)
 swe.set_ephe_path(EPHE_PATH)
 
-# API anahtarı (Render Environment: SECRET=unknown007)
+# Basit API anahtarı
 SECRET = os.environ.get("SECRET", "unknown007")
 
 @app.get("/")
@@ -31,7 +28,7 @@ async def natal(request: Request):
     try:
         body = await request.json()
 
-        # API KEY kontrolü
+        # API key
         if request.headers.get("x-api-key") != SECRET:
             return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
 
@@ -42,47 +39,48 @@ async def natal(request: Request):
         lat  = float(body["lat"])
         lon  = float(body["lon"])
 
-        # Tarih/konum
+        # Zaman/konum
         dt  = Datetime(date, time, tz)
         pos = GeoPos(lat, lon)
 
-        # >>> ÖNEMLİ: Dış gezegenleri de içeren ID listesi
+        # Dış gezegenleri ve ASC'yi de hesapla
         planet_ids = [
             const.SUN, const.MOON, const.MERCURY, const.VENUS, const.MARS,
-            const.JUPITER, const.SATURN, const.URANUS, const.NEPTUNE, const.PLUTO,
-            const.ASC
+            const.JUPITER, const.SATURN, const.URANUS, const.NEPTUNE, const.PLUTO
         ]
 
-        # Chart'ı bu ID'lerle oluştur
-        chart = Chart(dt, pos, IDs=planet_ids)
+        # Ev sistemi: Placidus (ASC hesaplaması için önemli)
+        chart = Chart(dt, pos, IDs=planet_ids, hsys=const.HOUSES_PLACIDUS)
 
-        # Güvenli paketleyici
-        def pack(obj_name: str):
+        # Gezegenleri güvenli paketle
+        def pack(name: str):
             try:
-                obj = chart.get(obj_name)
+                obj = chart.get(name)
                 return {"sign": obj.sign, "lon": float(obj.lon)}
             except Exception:
                 return None
 
         planets = {}
-        for name in [
-            const.SUN, const.MOON, const.MERCURY, const.VENUS, const.MARS,
-            const.JUPITER, const.SATURN, const.URANUS, const.NEPTUNE, const.PLUTO
-        ]:
+        for name in planet_ids:
             info = pack(name)
             if info is not None:
                 planets[name] = info
 
-        asc_obj = chart.get(const.ASC)
+        # ASC'yi houses üzerinden al (chart.get('Asc') yerine)
+        try:
+            asc_obj = chart.houses.asc
+            asc_payload = {"sign": asc_obj.sign, "lon": float(asc_obj.lon)}
+        except Exception:
+            asc_payload = None  # nadiren ev hesaplayamazsa
+
+        # Hangi gezegenler eksik?
+        missing = [n for n in planet_ids if n not in planets]
 
         return {
             "ok": True,
-            "asc": {"sign": asc_obj.sign, "lon": float(asc_obj.lon)},
+            "asc": asc_payload,
             "planets": planets,
-            "missing": [n for n in [
-                const.SUN, const.MOON, const.MERCURY, const.VENUS, const.MARS,
-                const.JUPITER, const.SATURN, const.URANUS, const.NEPTUNE, const.PLUTO
-            ] if n not in planets]
+            "missing": missing
         }
 
     except Exception as e:
