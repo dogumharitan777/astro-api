@@ -86,8 +86,8 @@ def pack(name: str):
 
 planets = {
     n: pack(n)
-    for n in ["Sun", "Moon", "Mercury", "Venus", "Mars",
-              "Jupiter", "Saturn", "Uranus", "Neptune", "Pluto"]
+    for n in ["Sun","Moon","Mercury","Venus","Mars",
+              "Jupiter","Saturn","Uranus","Neptune","Pluto"]
 }
 asc = chart.get("Asc")
 
@@ -101,4 +101,5 @@ return {
         # Hataları logla ve anlamlı mesaj döndür
         print("Natal error:", repr(e))
         raise HTTPException(status_code=400, detail=f"Input error: {e}")
+
 
