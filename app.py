@@ -1,43 +1,53 @@
+# app.py — FastAPI + Flatlib + Swiss Ephemeris (Render uyumlu ve stabil)
+
+import os
+import swisseph as swe
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from flatlib.chart import Chart
 from flatlib.datetime import Datetime
+from flatlib.geopos import GeoPos
 from flatlib import const
-import swisseph as swe
-import os
 
 app = FastAPI()
 
-# Ephemeris ayarı
+# Ephemeris yolu (Render build'de ephe/ içine indiriyoruz)
 EPHE_PATH = os.path.join(os.getcwd(), "ephe")
+try:
+    os.makedirs(EPHE_PATH, exist_ok=True)
+except Exception:
+    pass
 swe.set_ephe_path(EPHE_PATH)
 
-# Basit anahtar kontrolü
-API_KEY = os.environ.get("API_KEY", "unknown007")
+# API anahtarı (Render → Environment: SECRET=unknown007)
+SECRET = os.environ.get("SECRET", "unknown007")
 
 
 @app.get("/")
 def home():
-    return {"ok": True, "message": "Astro API çalışıyor"}
+    return {"ok": True, "message": "Astro API çalışıyor", "ephe": EPHE_PATH}
 
 
 @app.post("/natal")
 async def natal(request: Request):
     try:
-        # JSON body al
         body = await request.json()
-        if request.headers.get("x-api-key") != API_KEY:
-            return JSONResponse(status_code=403, content={"error": "invalid API key"})
 
-        date = body["date"]  # YYYY/MM/DD
-        time = body["time"]  # HH:MM
-        tz = body["tz"]
-        lat = body["lat"]
-        lon = body["lon"]
+        # API key kontrolü (header ismi X-API-KEY)
+        if request.headers.get("x-api-key") != SECRET:
+            return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+
+        # Girdiler
+        date = str(body["date"]).replace("-", "/").strip()  # 1999-07-21 -> 1999/07/21
+        time = str(body["time"]).strip()                    # HH:MM
+        tz   = str(body["tz"]).strip()                      # +03:00
+        lat  = float(body["lat"])
+        lon  = float(body["lon"])
 
         # Chart oluştur
-        dt = Datetime(date, time, tz)
-        chart = Chart(dt, (lat, lon))
+        dt  = Datetime(date, time, tz)
+        pos = GeoPos(lat, lon)          # << ÖNEMLİ: GeoPos kullan!
+        chart = Chart(dt, pos)
 
         def pack(name: str):
             obj = chart.get(name)
@@ -50,15 +60,12 @@ async def natal(request: Request):
                 const.JUPITER, const.SATURN, const.URANUS, const.NEPTUNE, const.PLUTO
             ]
         }
-
         asc = chart.get(const.ASC)
 
-        return {
-            "ok": True,
-            "asc": {"sign": asc.sign, "lon": float(asc.lon)},
-            "planets": planets,
-        }
+        return {"ok": True,
+                "asc": {"sign": asc.sign, "lon": float(asc.lon)},
+                "planets": planets}
 
     except Exception as e:
-        # Burada artık SyntaxError olmaz çünkü except var ✅
-        return JSONResponse(status_code=400, content={"detail": f"Input error: {str(e)}"})
+        # Anlamlı hata döndür
+        return JSONResponse(status_code=400, content={"detail": f"Input error: {e}"})
